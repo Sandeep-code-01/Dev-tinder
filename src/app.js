@@ -1,37 +1,129 @@
 const express = require("express");
+const connectDB = require("./config/database");
+const User = require("./models/user");
+const bcrypt = require("bcrypt");
+
+const {
+  validateSignUpData,
+  validateEditProfileData,
+} = require("./utils/validate");
+
 const app = express();
 
-// GET Request
-app.get("/User", (req, res) => {
-    res.send("Hello from the User route!");
+app.use(express.json());
+
+
+// ==================== SIGNUP ====================
+
+app.post("/signup", async (req, res) => {
+  try {
+    // Validate signup data
+    validateSignUpData(req);
+
+    const {
+      firstName,
+      lastName,
+      email,
+      password,
+    } = req.body;
+
+    // Check if user already exists
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(409).json({
+        message: "User already exists",
+      });
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Create user
+    const user = new User({
+      firstName,
+      lastName,
+      email,
+      password: hashedPassword,
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      message: "User created successfully",
+      data: user,
+    });
+  } catch (error) {
+    res.status(400).json({
+      message: error.message,
+    });
+  }
 });
 
-// POST Request
-app.post("/User", (req, res) => {
-    res.send("Data received!");
+
+// ==================== UPDATE USER ====================
+
+app.patch("/user", async (req, res) => {
+  try {
+    const userEmail = req.query.email;
+
+    if (!userEmail) {
+      return res.status(400).json({
+        message: "Email query parameter is required",
+      });
+    }
+
+    // Validate PATCH data
+    validateEditProfileData(req);
+
+    // Find user
+    const user = await User.findOne({ email: userEmail });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "User not found",
+      });
+    }
+
+    // Update first name
+    if (req.body.firstName !== undefined) {
+      user.firstName = req.body.firstName;
+    }
+
+    // Update last name
+    if (req.body.lastName !== undefined) {
+      user.lastName = req.body.lastName;
+    }
+
+    // Update password with hashing
+    if (req.body.password !== undefined) {
+      user.password = await bcrypt.hash(req.body.password, 10);
+    }
+
+    await user.save();
+
+    res.status(200).json({
+      message: "User updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    res.status(400).json({
+      message: error.message,
+    });
+  }
 });
 
-// DELETE Request
-app.delete("/User", (req, res) => {
-    res.send("User deleted!");
-});
 
-// Test Route
-app.get("/test", (req, res) => {
-    res.send("Hello from the test route!");
-});
+// ==================== DATABASE CONNECTION ====================
 
-// Hello Route
-app.get("/hello", (req, res) => {
-    res.send("Hello ji from the hello route!");
-});
+connectDB()
+  .then(() => {
+    console.log("Connected to MongoDB");
 
-// Default Route (optional)
-app.get("/", (req, res) => {
-    res.send("Welcome to Express Server!");
-});
-
-// Start Server
-app.listen(3000, () => {
-    console.log("Server is successfully listening on port 3000");
-});
+    app.listen(3000, () => {
+      console.log("Server listening on port 3000");
+    });
+  })
+  .catch((error) => {
+    console.error("Database connection failed:", error);
+  });
